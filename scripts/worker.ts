@@ -3,7 +3,7 @@ import { Worker } from "bullmq";
 import { env } from "@/lib/env";
 import { queueNames } from "@/lib/queues";
 import { processWebhookReceipt } from "@/lib/orders";
-import { processOutboundCallJob } from "@/lib/twilio";
+import { runOutboundCallJob } from "@/lib/twilio";
 
 function getBullMqConnection() {
   const url = new URL(env.REDIS_URL);
@@ -31,7 +31,7 @@ async function main() {
     new Worker(
       queueNames.outboundCalls,
       async (job) => {
-        await processOutboundCallJob(job.data.callId);
+        await runOutboundCallJob(job.data);
       },
       { connection, concurrency: 5 }
     )
