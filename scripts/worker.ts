@@ -1,53 +1,54 @@
-
+// scripts/worker.ts
 import { Worker } from "bullmq";
+import { env } from "@/lib/env";
 import { queueNames } from "@/lib/queues";
-import { redis } from "@/lib/redis";
 import { processWebhookReceipt } from "@/lib/orders";
-import { runOutboundCallJob } from "@/lib/twilio";
-import { prisma } from "@/lib/db";
+import { processOutboundCallJob } from "@/lib/twilio";
+
+function getBullMqConnection() {
+  const url = new URL(env.REDIS_URL);
+
+  return {
+    host: url.hostname,
+    port: Number(url.port || 6379),
+    username: url.username || undefined,
+    password: url.password || undefined,
+    ...(url.protocol === "rediss:" ? { tls: {} } : {})
+  };
+}
 
 async function main() {
+  const connection = getBullMqConnection();
+
   const workers = [
     new Worker(
       queueNames.shopifyOrders,
       async (job) => {
         await processWebhookReceipt(job.data.webhookReceiptId);
       },
-      { connection: redis, concurrency: 10 }
+      { connection, concurrency: 10 }
     ),
     new Worker(
       queueNames.outboundCalls,
       async (job) => {
-        await runOutboundCallJob(job.data);
+        await processOutboundCallJob(job.data.callId);
       },
-      { connection: redis, concurrency: 5 }
+      { connection, concurrency: 5 }
     )
   ];
 
-  for (const worker of workers) {
-    worker.on("failed", (job, error) => {
-      console.error(`[worker] job failed ${job?.name ?? "unknown"}`, error);
-    });
-
-    worker.on("completed", (job) => {
-      console.info(`[worker] job completed ${job.id}`);
-    });
-  }
-
   const shutdown = async () => {
     await Promise.all(workers.map((worker) => worker.close()));
-    await prisma.$disconnect();
-    await redis.quit();
     process.exit(0);
   };
 
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
+
+  console.log("Worker started");
 }
 
-main().catch(async (error) => {
-  console.error("[worker] fatal error", error);
-  await prisma.$disconnect();
-  await redis.quit();
+main().catch((error) => {
+  console.error("Worker failed to start", error);
   process.exit(1);
 });
