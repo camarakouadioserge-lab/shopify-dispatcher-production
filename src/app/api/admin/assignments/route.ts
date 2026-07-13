@@ -21,11 +21,17 @@ export async function POST(request: Request) {
 
   await prisma.closerProductAssignment.upsert({
     where: {
-      closerId_productId_countryCode: {
-        closerId,
-        productId,
-        countryCode: countryCodeRaw || null
-      }
+  closerId_productId_countryCode: {
+    closerId,
+    productId,
+    countryCode: countryCodeRaw
+  }
+},
+create: {
+  closerId,
+  productId,
+  countryCode: countryCodeRaw || null
+}
     },
     update: {
       priority,
